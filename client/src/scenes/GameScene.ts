@@ -402,7 +402,10 @@ export class GameScene extends Phaser.Scene {
 
     // Menu
     this.input.keyboard?.on('keydown-ESC', () => {
-        this.scene.pause();
+        const isOnline = Object.keys(this.otherPlayers).length > 0;
+        if (!isOnline) {
+            this.scene.pause();
+        }
         this.scene.launch('InGameMenuScene');
     });
 
@@ -644,20 +647,30 @@ export class GameScene extends Phaser.Scene {
     if (this.worm && this.cursors) {
         if (this.isGameRunning) {
             const pointer = this.input.activePointer;
-            this.worm.update(time, delta, this.cursors, pointer, this.wasd);
-            
-            // Auto-fire / Rope Logic
-            // Priority: Rope > Fire
-            // This prevents shooting while roping, and ensures rope works even if left click is not held.
-            
-            if (pointer.rightButtonDown()) {
-                this.worm.fireRope();
+            const isMenuOpen = this.scene.isActive('InGameMenuScene');
+
+            if (isMenuOpen) {
+                 const dummyCursors = { left: { isDown: false }, right: { isDown: false }, up: { isDown: false }, down: { isDown: false } } as any;
+                 const dummyWasd = { left: { isDown: false }, right: { isDown: false }, up: { isDown: false }, down: { isDown: false } };
+                 const dummyPointer = { worldX: pointer.worldX, worldY: pointer.worldY, isDown: false, rightButtonDown: () => false } as any;
+                 
+                 this.worm.update(time, delta, dummyCursors, dummyPointer, dummyWasd);
             } else {
-                this.worm.releaseRope();
+                this.worm.update(time, delta, this.cursors, pointer, this.wasd);
                 
-                // Only fire if not roping (Right button not held)
-                // Use trigger to handle charging
-                this.worm.trigger(time, pointer.isDown);
+                // Auto-fire / Rope Logic
+                // Priority: Rope > Fire
+                // This prevents shooting while roping, and ensures rope works even if left click is not held.
+                
+                if (pointer.rightButtonDown()) {
+                    this.worm.fireRope();
+                } else {
+                    this.worm.releaseRope();
+                    
+                    // Only fire if not roping (Right button not held)
+                    // Use trigger to handle charging
+                    this.worm.trigger(time, pointer.isDown);
+                }
             }
 
             // Send movement
