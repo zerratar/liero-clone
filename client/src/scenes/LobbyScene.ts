@@ -149,64 +149,121 @@ export class LobbyScene extends Phaser.Scene {
       container.add(bg);
       
       // Dialog
+      const dialogWidth = 400;
+      const dialogHeight = 380;
+      const dialogX = width / 2 - dialogWidth / 2;
+      const dialogY = height / 2 - dialogHeight / 2;
+
       const dialogBg = this.add.graphics();
-      dialogBg.fillStyle(0x2a2a2a, 1);
-      dialogBg.fillRoundedRect(width/2 - 200, height/2 - 100, 400, 200, 12);
-      dialogBg.lineStyle(2, 0x444444, 1);
-      dialogBg.strokeRoundedRect(width/2 - 200, height/2 - 100, 400, 200, 12);
+      dialogBg.fillStyle(0x222222, 0.95);
+      dialogBg.fillRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, 16);
+      dialogBg.lineStyle(2, 0x555555, 1);
+      dialogBg.strokeRoundedRect(dialogX, dialogY, dialogWidth, dialogHeight, 16);
       container.add(dialogBg);
       
-      const title = this.add.text(width/2, height/2 - 60, 'Create New Room', { 
-          fontSize: '24px', color: '#fff', fontStyle: 'bold' 
+      const title = this.add.text(width/2, dialogY + 40, 'CREATE NEW ROOM', { 
+          fontSize: '28px', color: '#ffffff', fontStyle: 'bold', fontFamily: 'Arial Black'
       }).setOrigin(0.5);
       container.add(title);
       
       // Input Field
+      const inputY = dialogY + 100;
       const inputBg = this.add.graphics();
-      inputBg.fillStyle(0x111111, 1);
-      inputBg.fillRoundedRect(width/2 - 150, height/2 - 10, 300, 40, 5);
+      inputBg.fillStyle(0x000000, 0.5);
+      inputBg.lineStyle(2, 0x444444);
+      inputBg.fillRoundedRect(width/2 - 150, inputY - 25, 300, 50, 8);
+      inputBg.strokeRoundedRect(width/2 - 150, inputY - 25, 300, 50, 8);
       container.add(inputBg);
       
       let inputText = 'My Room';
-      const inputDisplay = this.add.text(width/2, height/2 + 10, inputText, { 
-          fontSize: '20px', color: '#fff'
+      const inputDisplay = this.add.text(width/2, inputY, inputText, { 
+          fontSize: '24px', color: '#ffffff', fontFamily: 'Arial'
       }).setOrigin(0.5);
       container.add(inputDisplay);
+
+      // Cursor
+      const cursor = this.add.text(0, inputY, '|', {
+          fontSize: '24px', color: '#ffffff', fontFamily: 'Arial'
+      }).setOrigin(0, 0.5);
+      container.add(cursor);
+
+      const updateCursorPos = () => {
+          cursor.x = inputDisplay.x + inputDisplay.width / 2 + 2;
+      };
+      updateCursorPos();
+
+      // Blink animation
+      const cursorTween = this.tweens.add({
+          targets: cursor,
+          alpha: 0,
+          duration: 500,
+          yoyo: true,
+          repeat: -1
+      });
+
+      const inputLabel = this.add.text(width/2 - 145, inputY - 40, 'ROOM NAME', {
+          fontSize: '12px', color: '#aaaaaa', fontStyle: 'bold'
+      }).setOrigin(0, 0.5);
+      container.add(inputLabel);
       
       // Map Size Selector
+      const optionY = dialogY + 170;
       let mapSize: 'small' | 'medium' | 'large' = 'small';
-      const mapSizeBtn = this.add.text(width/2, height/2 + 40, 'Map Size: Small', {
-          fontSize: '16px', color: '#00ffff'
+      
+      const mapSizeLabel = this.add.text(width/2, optionY - 25, 'MAP SIZE', {
+          fontSize: '14px', color: '#aaaaaa', fontStyle: 'bold'
+      }).setOrigin(0.5);
+
+      const mapSizeBtn = this.add.text(width/2, optionY, 'SMALL', {
+          fontSize: '20px', color: '#00ffff', fontStyle: 'bold'
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
       
-      mapSizeBtn.on('pointerdown', () => {
-          if (mapSize === 'small') mapSize = 'medium';
-          else if (mapSize === 'medium') mapSize = 'large';
-          else mapSize = 'small';
-          mapSizeBtn.setText(`Map Size: ${mapSize.charAt(0).toUpperCase() + mapSize.slice(1)}`);
-      });
-      container.add(mapSizeBtn);
+      const mapLeftArrow = this.add.text(width/2 - 80, optionY, '<', { fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      const mapRightArrow = this.add.text(width/2 + 80, optionY, '>', { fontSize: '24px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+      const updateMapText = () => {
+           mapSizeBtn.setText(mapSize.toUpperCase());
+      };
+
+      const cycleMapSize = (dir: number) => {
+          const sizes: ('small' | 'medium' | 'large')[] = ['small', 'medium', 'large'];
+          let idx = sizes.indexOf(mapSize);
+          idx = (idx + dir + sizes.length) % sizes.length;
+          mapSize = sizes[idx];
+          updateMapText();
+      }
+
+      mapSizeBtn.on('pointerdown', () => cycleMapSize(1));
+      mapLeftArrow.on('pointerdown', () => cycleMapSize(-1));
+      mapRightArrow.on('pointerdown', () => cycleMapSize(1));
+
+      container.add([mapSizeLabel, mapSizeBtn, mapLeftArrow, mapRightArrow]);
 
       // Lives Selector
+      const livesY = dialogY + 240;
       let lives = 5;
       const livesOptions = [1, 3, 5, 10, 999];
       let livesIndex = 2; // Default to 5
 
-      const livesLabel = this.add.text(width/2, height/2 + 70, `Lives: ${lives}`, {
-          fontSize: '16px', color: '#00ffff'
+      const livesTitle = this.add.text(width/2, livesY - 25, 'LIVES', {
+          fontSize: '14px', color: '#aaaaaa', fontStyle: 'bold'
+      }).setOrigin(0.5);
+
+      const livesLabel = this.add.text(width/2, livesY, '5', {
+          fontSize: '20px', color: '#00ffff', fontStyle: 'bold'
       }).setOrigin(0.5);
       
-      const leftArrow = this.add.text(width/2 - 60, height/2 + 70, '<', {
-          fontSize: '20px', color: '#ffffff', fontStyle: 'bold'
+      const leftArrow = this.add.text(width/2 - 80, livesY, '<', {
+          fontSize: '24px', color: '#ffffff', fontStyle: 'bold'
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-      const rightArrow = this.add.text(width/2 + 60, height/2 + 70, '>', {
-          fontSize: '20px', color: '#ffffff', fontStyle: 'bold'
+      const rightArrow = this.add.text(width/2 + 80, livesY, '>', {
+          fontSize: '24px', color: '#ffffff', fontStyle: 'bold'
       }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
       const updateLivesText = () => {
           lives = livesOptions[livesIndex];
-          livesLabel.setText(`Lives: ${lives === 999 ? 'Unlimited' : lives}`);
+          livesLabel.setText(`${lives === 999 ? 'UNLIMITED' : lives}`);
       };
 
       leftArrow.on('pointerdown', () => {
@@ -219,17 +276,18 @@ export class LobbyScene extends Phaser.Scene {
           updateLivesText();
       });
 
-      container.add([livesLabel, leftArrow, rightArrow]);
+      container.add([livesTitle, livesLabel, leftArrow, rightArrow]);
 
       // Buttons
-      const createBtn = this.createButton(width/2 - 80, height/2 + 110, 'CREATE', 0x00aa00, () => {
+      const btnY = dialogY + 300;
+      const createBtn = this.createButton(width/2 - 85, btnY, 'CREATE', 0x00aa00, () => {
           if (inputText.length > 0) {
               this.socket.emit('createRoom', { name: inputText, config: { mapSize, lives } });
               cleanup();
           }
       });
       
-      const cancelBtn = this.createButton(width/2 + 80, height/2 + 110, 'CANCEL', 0xaa0000, () => {
+      const cancelBtn = this.createButton(width/2 + 85, btnY, 'CANCEL', 0xaa0000, () => {
           cleanup();
       });
       
@@ -243,12 +301,14 @@ export class LobbyScene extends Phaser.Scene {
               inputText += event.key;
           }
           inputDisplay.setText(inputText);
+          updateCursorPos();
       };
       
       this.input.keyboard!.on('keydown', keyHandler);
       
       const cleanup = () => {
           this.input.keyboard!.off('keydown', keyHandler);
+          cursorTween.remove();
           container.destroy();
       };
   }
