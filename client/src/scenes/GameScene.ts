@@ -71,6 +71,9 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.socket.on('currentPlayers', (players: Record<string, PlayerState>) => {
+        this.lastServerPlayers = Object.values(players);
+        this.updateStatsDisplay();
+
         Object.keys(players).forEach((id) => {
             if (id === this.socket.id) {
                 // Sync my position from server spawn point
@@ -104,9 +107,13 @@ export class GameScene extends Phaser.Scene {
             // I am dead permanently
             this.worm.setVisible(false);
             this.worm.setActive(false);
-            this.add.text(this.scale.width/2, this.scale.height/2, 'ELIMINATED', {
-                fontSize: '64px', color: '#ff0000', stroke: '#000', strokeThickness: 6
-            }).setOrigin(0.5).setScrollFactor(0);
+            
+            // Only show text if NOT in bot mode (Bot mode handles Game Over immediately)
+            if (!this.bot) {
+                this.add.text(this.scale.width/2, this.scale.height/2, 'ELIMINATED', {
+                    fontSize: '64px', color: '#ff0000', stroke: '#000', strokeThickness: 6
+                }).setOrigin(0.5).setScrollFactor(0);
+            }
         } else if (this.otherPlayers[playerId]) {
             this.otherPlayers[playerId].setVisible(false);
             this.otherPlayers[playerId].setActive(false);
@@ -114,17 +121,18 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.socket.on('gameOver', (data: { winner: PlayerState | null }) => {
-        const winnerName = data.winner ? data.winner.name : 'No One';
-        this.add.text(this.scale.width/2, this.scale.height/2 - 100, 'GAME OVER', {
-            fontSize: '64px', color: '#ffffff', stroke: '#000', strokeThickness: 6
-        }).setOrigin(0.5).setScrollFactor(0);
-        
-        this.add.text(this.scale.width/2, this.scale.height/2, `Winner: ${winnerName}`, {
-            fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4
-        }).setOrigin(0.5).setScrollFactor(0);
-
-        // Stop game
         this.isGameRunning = false;
+        this.scene.launch('GameOverScene', {
+            winner: data.winner ? data.winner.name : 'No One',
+            scores: this.lastServerPlayers,
+            onRestart: () => {
+                 window.location.reload(); 
+            },
+            onMenu: () => {
+                 window.location.reload();
+            }
+        });
+        this.scene.pause();
     });
 
     this.socket.on('startCountdown', () => {
@@ -483,11 +491,62 @@ export class GameScene extends Phaser.Scene {
       if (this.bot) {
           const livesText = (this.botStats.lives >= 999) ? '∞' : this.botStats.lives;
           text += `${this.botStats.name}: Kills: ${this.botStats.kills} | Lives: ${livesText}\n`;
+          
+          // Check Local Game Over (Bot Mode)
+          const myPlayer = this.lastServerPlayers.find(p => p.id === this.socket.id);
+          const myLives = myPlayer ? myPlayer.lives : 5;
+          
+          // Check if I lost
+          if (myLives !== undefined && myLives <= 0 && myLives < 999) {
+              this.handleLocalGameOver(this.botStats.name);
+          }
+          
+          // Check if Bot lost
+          if (this.botStats.lives <= 0 && this.botStats.lives < 999) {
+              // If bot lost, I am the winner
+              this.handleLocalGameOver(myPlayer ? myPlayer.name : 'Player');
+          }
       }
       
       if (this.statsText) {
           this.statsText.setText(text);
       }
+  }
+
+  handleLocalGameOver(winnerName: string) {
+      if (!this.isGameRunning) return;
+      this.isGameRunning = false;
+      
+      // Construct scores
+      const scores: any[] = [];
+      // Add me
+      const myPlayer = this.lastServerPlayers.find(p => p.id === this.socket.id);
+      // Even if not found in lastServerPlayers (should be there now), add fallback
+      scores.push({ 
+          name: myPlayer ? myPlayer.name : 'Player', 
+          kills: (myPlayer ? (myPlayer.kills || 0) : 0) + this.localBotKills, 
+          lives: myPlayer ? myPlayer.lives : (this.roomConfig?.lives || 5)
+      });
+      
+      // Add Bot
+      scores.push({
+          name: this.botStats.name,
+          kills: this.botStats.kills,
+          lives: this.botStats.lives
+      });
+      
+      this.scene.launch('GameOverScene', {
+          winner: winnerName,
+          scores: scores,
+          onRestart: () => {
+              this.scene.stop('GameOverScene');
+              this.scene.restart({ weapons: this.initialWeapons, roomConfig: this.roomConfig });
+          },
+          onMenu: () => {
+              window.location.reload();
+          }
+      });
+      this.scene.pause();
   }
 
   ensureClearSpace(x: number, y: number, emit: boolean = false) {
@@ -681,7 +740,7 @@ export class GameScene extends Phaser.Scene {
     this.terrain.refresh();
 
     if (this.worm && this.cursors) {
-        if (this.isGameRunning) {
+        if (this.isGameRunning && this.worm.active) {
             const pointer = this.input.activePointer;
             const isMenuOpen = this.scene.isActive('InGameMenuScene');
 

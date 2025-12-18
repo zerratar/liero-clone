@@ -6,6 +6,7 @@ import { WeaponSelectScene } from './scenes/WeaponSelectScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { RoomScene } from './scenes/RoomScene';
 import { InGameMenuScene } from './scenes/InGameMenuScene';
+import { GameOverScene } from './scenes/GameOverScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -19,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
     zoom: 1
   },
-  scene: [BootScene, MenuScene, LobbyScene, RoomScene, WeaponSelectScene, GameScene, InGameMenuScene],
+  scene: [BootScene, MenuScene, LobbyScene, RoomScene, WeaponSelectScene, GameScene, InGameMenuScene, GameOverScene],
   physics: {
     default: 'arcade',
     arcade: {
