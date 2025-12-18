@@ -27,6 +27,11 @@ export class GameScene extends Phaser.Scene {
   private mapWidth: number = 800;
   private mapHeight: number = 600;
   private statsText?: Phaser.GameObjects.Text;
+  
+  // Bot Stats Tracking
+  private botStats = { name: 'BOT', kills: 0, lives: 5 };
+  private localBotKills = 0;
+  private lastServerPlayers: PlayerState[] = [];
 
   constructor() {
     super('GameScene');
@@ -90,15 +95,8 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.socket.on('scoreUpdate', (players: PlayerState[]) => {
-        // Update local score display
-        let text = '';
-        players.forEach(p => {
-            const livesText = (p.lives === undefined || p.lives >= 999) ? '∞' : p.lives;
-            text += `${p.name}: Kills: ${p.kills || 0} | Lives: ${livesText}\n`;
-        });
-        if (this.statsText) {
-            this.statsText.setText(text);
-        }
+        this.lastServerPlayers = players;
+        this.updateStatsDisplay();
     });
 
     this.socket.on('playerEliminated', (playerId: string) => {
@@ -329,6 +327,13 @@ export class GameScene extends Phaser.Scene {
     };
     this.worm.onDeath = () => {
         this.socket.emit('playerDied', null);
+        
+        // If playing against bot, bot gets a kill
+        if (this.bot) {
+            this.botStats.kills++;
+            this.updateStatsDisplay();
+        }
+
         // Spawn Gibs
         for (let i = 0; i < 10; i++) {
             new Gib(this, this.worm.x, this.worm.y, this.terrain);
@@ -345,6 +350,11 @@ export class GameScene extends Phaser.Scene {
     this.bot.setTarget(this.worm); // Target the player
     this.ensureClearSpace(400, 50, false); // Carve for bot locally
     
+    // Init Bot Stats
+    this.botStats.lives = this.roomConfig?.lives || 5;
+    this.botStats.kills = 0;
+    this.localBotKills = 0;
+    
     this.bot.onProjectileExplode = handleBotExplosion;
     this.bot.onDamage = (amount: number) => {
         for (let i = 0; i < amount * 3; i++) {
@@ -352,6 +362,13 @@ export class GameScene extends Phaser.Scene {
         }
     };
     this.bot.onDeath = () => {
+        // Update Stats
+        if (this.botStats.lives < 999) {
+            this.botStats.lives--;
+        }
+        this.localBotKills++;
+        this.updateStatsDisplay();
+
         for (let i = 0; i < 10; i++) {
             new Gib(this, this.bot.x, this.bot.y, this.terrain, 0x999999); // Grey gibs
         }
@@ -452,6 +469,25 @@ export class GameScene extends Phaser.Scene {
     
     // Notify server we are loaded and ready for countdown
     this.socket.emit('playerLoaded');
+  }
+
+  updateStatsDisplay() {
+      let text = '';
+      this.lastServerPlayers.forEach(p => {
+          const isMe = p.id === this.socket.id;
+          const kills = (p.kills || 0) + (isMe ? this.localBotKills : 0);
+          const livesText = (p.lives === undefined || p.lives >= 999) ? '∞' : p.lives;
+          text += `${p.name}: Kills: ${kills} | Lives: ${livesText}\n`;
+      });
+      
+      if (this.bot) {
+          const livesText = (this.botStats.lives >= 999) ? '∞' : this.botStats.lives;
+          text += `${this.botStats.name}: Kills: ${this.botStats.kills} | Lives: ${livesText}\n`;
+      }
+      
+      if (this.statsText) {
+          this.statsText.setText(text);
+      }
   }
 
   ensureClearSpace(x: number, y: number, emit: boolean = false) {
