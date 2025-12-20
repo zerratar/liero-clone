@@ -26,6 +26,8 @@ export class Worm extends Phaser.GameObjects.Container {
   public onProjectileExplode?: (x: number, y: number, radius: number, weaponId: string) => void;
   public onDeath?: () => void;
   public onDamage?: (amount: number) => void;
+  public isInvulnerable: boolean = false;
+  public isDead: boolean = false;
   
   private lastFireTime: number = 0;
   public isCharging: boolean = false;
@@ -38,6 +40,7 @@ export class Worm extends Phaser.GameObjects.Container {
   public aimGraphics: Phaser.GameObjects.Graphics;
   private color: number;
   private animationTimer: number = 0;
+  private shieldGraphics: Phaser.GameObjects.Graphics;
 
   constructor(scene: Phaser.Scene, x: number, y: number, terrain: Terrain, socket?: Socket, color: number = 0xE57373, name: string = 'Worm') {
     super(scene, x, y);
@@ -50,6 +53,15 @@ export class Worm extends Phaser.GameObjects.Container {
     // Body Visuals
     this.bodyGraphics = scene.add.graphics();
     this.add(this.bodyGraphics);
+
+    // Shield Visuals (Initially hidden)
+    this.shieldGraphics = scene.add.graphics();
+    this.shieldGraphics.lineStyle(4, 0x00ffff, 0.5); // Thicker, brighter stroke, but lower alpha to match container
+    this.shieldGraphics.fillStyle(0x00ffff, 0.3); // Higher alpha fill
+    this.shieldGraphics.strokeCircle(0, 0, 16); // Larger radius
+    this.shieldGraphics.fillCircle(0, 0, 16);
+    this.shieldGraphics.setVisible(false);
+    this.add(this.shieldGraphics);
 
     // Aim Visuals
     this.aimGraphics = scene.add.graphics();
@@ -536,7 +548,38 @@ export class Worm extends Phaser.GameObjects.Container {
       }
   }
 
+  setInvulnerable(duration: number) {
+      this.isInvulnerable = true;
+      this.alpha = 0.5;
+      this.shieldGraphics.setVisible(false);
+      
+      this.scene.time.delayedCall(duration, () => {
+          if (this.active) {
+            this.isInvulnerable = false;
+            this.alpha = 1;
+            this.shieldGraphics.setVisible(false);
+          }
+      });
+  }
+
   takeDamage(amount: number) {
+      if (this.isInvulnerable || this.isDead) {
+          if (this.isInvulnerable) {
+              this.shieldGraphics.setVisible(true);
+              this.shieldGraphics.alpha = 1;
+              this.scene.tweens.killTweensOf(this.shieldGraphics);
+              this.scene.tweens.add({
+                  targets: this.shieldGraphics,
+                  alpha: 0,
+                  duration: 200,
+                  onComplete: () => {
+                      this.shieldGraphics.setVisible(false);
+                  }
+              });
+          }
+          return;
+      }
+
       this.hp -= amount;
       if (this.hp < 0) this.hp = 0;
 
@@ -574,6 +617,7 @@ export class Worm extends Phaser.GameObjects.Container {
       }
 
       if (this.hp <= 0 && this.onDeath) {
+          this.isDead = true;
           this.onDeath();
       }
   }

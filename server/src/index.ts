@@ -11,7 +11,7 @@ app.use(cors());
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -155,7 +155,15 @@ io.on('connection', (socket) => {
                   p.vx = 0;
                   p.vy = 0;
                   p.hp = 100;
+                  p.kills = 0;
+                  p.score = 0;
+                  p.lives = room.config.lives;
+                  p.isReady = false;
+                  (p as any).isMatchReady = false;
+                  (p as any).isLoaded = false;
               });
+              
+              io.to(roomId).emit('roomPlayerUpdate', room.players);
               // We don't emit currentPlayers here anymore, we wait for clients to ask or we emit it but they might miss it.
               // Better to let them ask.
           }
@@ -279,6 +287,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 3001;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });

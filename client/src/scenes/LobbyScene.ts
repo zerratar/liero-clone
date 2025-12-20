@@ -10,7 +10,8 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   create() {
-    this.socket = io('http://localhost:3001');
+    const serverUrl = `http://${window.location.hostname}:3001`;
+    this.socket = io(serverUrl);
     this.registry.set('socket', this.socket);
 
     const { width, height } = this.scale;

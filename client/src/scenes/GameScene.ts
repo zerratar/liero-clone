@@ -63,7 +63,8 @@ export class GameScene extends Phaser.Scene {
     this.socket = this.registry.get('socket');
     if (!this.socket) {
         // Fallback for direct dev testing if needed
-        this.socket = io('http://localhost:3001');
+        const serverUrl = `http://${window.location.hostname}:3001`;
+        this.socket = io(serverUrl);
     }
     
     this.socket.on('connect', () => {
@@ -71,6 +72,14 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.socket.on('currentPlayers', (players: Record<string, PlayerState>) => {
+        // If we have other players, remove the bot
+        // Only remove bot if there are ACTUAL other players connected
+        const otherPlayerIds = Object.keys(players).filter(id => id !== this.socket.id);
+        if (otherPlayerIds.length > 0 && this.bot) {
+            this.bot.destroy();
+            this.bot = undefined as any;
+        }
+
         this.lastServerPlayers = Object.values(players);
         this.updateStatsDisplay();
 
@@ -88,13 +97,7 @@ export class GameScene extends Phaser.Scene {
         });
         // If we have other players, remove the bot
         // Only remove bot if there are ACTUAL other players connected
-        if (Object.keys(this.otherPlayers).length > 0 && this.bot) {
-            this.bot.destroy();
-            this.bot = undefined as any;
-        } else if (!this.bot) {
-             // If no other players and no bot, maybe respawn bot?
-             // For now, assume bot is created in create() and only destroyed here.
-        }
+        // (Already handled above)
     });
 
     this.socket.on('scoreUpdate', (players: PlayerState[]) => {
@@ -120,13 +123,44 @@ export class GameScene extends Phaser.Scene {
         }
     });
 
+    this.socket.on('playerRespawn', (player: PlayerState) => {
+        if (player.id === this.socket.id) {
+            this.worm.x = player.x;
+            this.worm.y = player.y;
+            this.worm.hp = player.hp;
+            this.worm.velocity.set(0, 0);
+            this.worm.isDead = false;
+            this.worm.updateHealthBar();
+            this.worm.setVisible(true);
+            this.worm.setActive(true);
+            this.ensureClearSpace(this.worm.x, this.worm.y, true);
+            
+            // Invulnerability
+            this.worm.setInvulnerable(3000);
+        } else if (this.otherPlayers[player.id]) {
+            const other = this.otherPlayers[player.id];
+            other.x = player.x;
+            other.y = player.y;
+            other.setVisible(true);
+            other.setActive(true);
+            other.updateState(player);
+            
+            // Invulnerability
+            other.setInvulnerable(3000);
+        }
+    });
+
     this.socket.on('gameOver', (data: { winner: PlayerState | null }) => {
         this.isGameRunning = false;
         this.scene.launch('GameOverScene', {
             winner: data.winner ? data.winner.name : 'No One',
             scores: this.lastServerPlayers,
             onRestart: () => {
-                 window.location.reload(); 
+                 // Reset Server State
+                 this.socket.emit('startGame');
+                 
+                 this.scene.stop('GameOverScene');
+                 this.scene.restart({ weapons: this.initialWeapons, roomConfig: this.roomConfig });
             },
             onMenu: () => {
                  window.location.reload();
@@ -157,6 +191,24 @@ export class GameScene extends Phaser.Scene {
 
     this.socket.on('gameSeed', (data: { seed: number }) => {
         handleSeed(data.seed);
+    });
+
+    // Cleanup listeners on shutdown
+    this.events.on('shutdown', () => {
+        this.socket.off('connect');
+        this.socket.off('currentPlayers');
+        this.socket.off('scoreUpdate');
+        this.socket.off('playerEliminated');
+        this.socket.off('playerRespawn');
+        this.socket.off('gameOver');
+        this.socket.off('startCountdown');
+        this.socket.off('gameStarted');
+        this.socket.off('gameSeed');
+        this.socket.off('newPlayer');
+        this.socket.off('playerMoved');
+        this.socket.off('playerDisconnected');
+        this.socket.off('playerFired');
+        this.socket.off('terrainExplosion');
     });
 
     this.socket.on('newPlayer', (playerInfo: PlayerState) => {
@@ -245,25 +297,7 @@ export class GameScene extends Phaser.Scene {
         }
     });
 
-    this.socket.on('playerRespawn', (playerInfo: PlayerState) => {
-        if (playerInfo.id === this.socket.id) {
-            // Me
-            this.worm.x = playerInfo.x;
-            this.worm.y = playerInfo.y;
-            this.worm.hp = 100;
-            this.worm.alpha = 1; // Reset transparency
-            this.worm.updateHealthBar();
-            
-            // Check if stuck and carve
-            this.ensureClearSpace(this.worm.x, this.worm.y, true);
-        } else if (this.otherPlayers[playerInfo.id]) {
-            // Other
-            this.otherPlayers[playerInfo.id].updateState(playerInfo);
-            this.otherPlayers[playerInfo.id].alpha = 1; // Reset transparency
-            // Ensure they have space locally
-            this.ensureClearSpace(playerInfo.x, playerInfo.y, false);
-        }
-    });
+
 
     const clientText = this.add.text(10, 10, 'Liero Remake - Client Connected', { color: '#0f0' }).setDepth(100).setScrollFactor(0);
     this.weaponText = this.add.text(10, 30, 'Weapon: Bazooka', { color: '#fff' }).setDepth(100).setScrollFactor(0);
@@ -334,7 +368,16 @@ export class GameScene extends Phaser.Scene {
         }
     };
     this.worm.onDeath = () => {
-        this.socket.emit('playerDied', null);
+        // Determine killer (simplified: if I die, and there are other players, assume last hit came from them)
+        // Ideally we track who hit us last.
+        // For now, if there is exactly one other player, they are the killer.
+        let killerId: string | null = null;
+        const otherIds = Object.keys(this.otherPlayers);
+        if (otherIds.length === 1) {
+            killerId = otherIds[0];
+        }
+        
+        this.socket.emit('playerDied', killerId);
         
         // If playing against bot, bot gets a kill
         if (this.bot) {
@@ -386,19 +429,29 @@ export class GameScene extends Phaser.Scene {
         // Bot respawn logic
         this.time.delayedCall(2000, () => {
             if (this.bot) {
-                this.bot.x = 400;
+                // Randomize spawn X
+                const spawnX = Phaser.Math.Between(100, this.mapWidth - 100);
+                this.bot.x = spawnX;
                 this.bot.y = 50;
+                this.bot.velocity.set(0, 0); // Reset velocity
                 this.bot.hp = 100;
+                this.bot.isDead = false;
                 this.bot.updateHealthBar();
                 this.bot.setActive(true);
                 this.bot.setVisible(true);
-                this.ensureClearSpace(400, 50, false); // Carve for bot respawn
+                this.ensureClearSpace(spawnX, 50, false); // Carve for bot respawn
+                
+                // Invulnerability
+                this.bot.setInvulnerable(3000);
+
+
             }
         });
         // Hide bot temporarily
         this.bot.setActive(false);
         this.bot.setVisible(false);
         this.bot.x = -1000; // Move away
+        this.bot.velocity.set(0, 0); // Stop movement immediately
     };
 
     // Input
